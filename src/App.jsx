@@ -1,0 +1,675 @@
+import { useMemo, useState } from 'react'
+import {
+  Activity,
+  Atom,
+  Beaker,
+  BrainCircuit,
+  ChevronRight,
+  CircleGauge,
+  Database,
+  FlaskConical,
+  Gauge,
+  Layers3,
+  LineChart,
+  Microscope,
+  Orbit,
+  Radar,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Thermometer,
+  Waves,
+} from 'lucide-react'
+
+const DATA = [
+  { t: 80,  p: 1.0, u: 0, y: 1.17, source: 'text' },
+  { t: 90,  p: 1.0, u: 0, y: 2.50, source: 'text' },
+  { t: 100, p: 1.0, u: 0, y: 4.00, source: 'figure' },
+
+  { t: 80,  p: 1.0, u: 1, y: 1.00, source: 'text' },
+  { t: 90,  p: 1.0, u: 1, y: 2.00, source: 'text' },
+  { t: 100, p: 1.0, u: 1, y: 3.30, source: 'figure' },
+  { t: 110, p: 1.0, u: 1, y: 6.60, source: 'figure' },
+  { t: 120, p: 1.0, u: 1, y: 9.80, source: 'figure' },
+
+  { t: 90, p: 0.5, u: 0, y: 1.25, source: 'text' },
+  { t: 90, p: 2.0, u: 0, y: 5.00, source: 'figure' },
+  { t: 90, p: 0.5, u: 1, y: 1.00, source: 'figure' },
+  { t: 90, p: 2.0, u: 1, y: 4.00, source: 'figure' },
+]
+
+// Hyperparameters reproduced from the trained sklearn GPR:
+// 1.84**2 * RBF(length_scale=[1.65, 6.7, 11.6]) + WhiteKernel(noise_level=1e-5)
+const X_MEAN = [94.16666667, 1.08333333, 0.58333333]
+const X_SCALE = [11.14924013, 0.44876373, 0.49300665]
+const Y_MEAN = 3.4683333333333333
+const Y_STD = 2.554723838086788
+const SIGNAL = 1.84 ** 2
+const LENGTH = [1.65, 6.7, 11.6]
+const NOISE = 1e-5
+
+const GPR_MAE = 0.2503
+const LINEAR_MAE = 0.8050
+
+function standardize(x) {
+  return x.map((v, i) => (v - X_MEAN[i]) / X_SCALE[i])
+}
+
+function rbf(a, b) {
+  let q = 0
+  for (let i = 0; i < 3; i++) {
+    const d = (a[i] - b[i]) / LENGTH[i]
+    q += d * d
+  }
+  return SIGNAL * Math.exp(-0.5 * q)
+}
+
+function cholesky(A) {
+  const n = A.length
+  const L = Array.from({ length: n }, () => Array(n).fill(0))
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      let sum = 0
+      for (let k = 0; k < j; k++) sum += L[i][k] * L[j][k]
+
+      if (i === j) {
+        L[i][j] = Math.sqrt(Math.max(A[i][i] - sum, 1e-12))
+      } else {
+        L[i][j] = (A[i][j] - sum) / L[j][j]
+      }
+    }
+  }
+  return L
+}
+
+function forwardSolve(L, b) {
+  const n = b.length
+  const y = Array(n).fill(0)
+  for (let i = 0; i < n; i++) {
+    let s = 0
+    for (let j = 0; j < i; j++) s += L[i][j] * y[j]
+    y[i] = (b[i] - s) / L[i][i]
+  }
+  return y
+}
+
+function backwardSolve(L, y) {
+  const n = y.length
+  const x = Array(n).fill(0)
+  for (let i = n - 1; i >= 0; i--) {
+    let s = 0
+    for (let j = i + 1; j < n; j++) s += L[j][i] * x[j]
+    x[i] = (y[i] - s) / L[i][i]
+  }
+  return x
+}
+
+function dot(a, b) {
+  return a.reduce((s, v, i) => s + v * b[i], 0)
+}
+
+const TRAIN_X = DATA.map(d => standardize([d.t, d.p, d.u]))
+const TRAIN_Y = DATA.map(d => (d.y - Y_MEAN) / Y_STD)
+const K = TRAIN_X.map((a, i) =>
+  TRAIN_X.map((b, j) => rbf(a, b) + (i === j ? NOISE : 0))
+)
+const L = cholesky(K)
+const alpha = backwardSolve(L, forwardSolve(L, TRAIN_Y))
+
+function gprPredict(t, p, u) {
+  const x = standardize([t, p, u])
+  const k = TRAIN_X.map(xi => rbf(x, xi))
+  const meanNorm = dot(k, alpha)
+  const v = forwardSolve(L, k)
+  const varNorm = Math.max(SIGNAL + NOISE - dot(v, v), 0)
+  return {
+    mean: Y_MEAN + Y_STD * meanNorm,
+    std: Y_STD * Math.sqrt(varNorm),
+  }
+}
+
+function buildGrid(u, metric = 'mean', rows = 25, cols = 41) {
+  const cells = []
+  let min = Infinity
+  let max = -Infinity
+
+  for (let r = 0; r < rows; r++) {
+    const p = 2.0 - (r / (rows - 1)) * 1.5
+    for (let c = 0; c < cols; c++) {
+      const t = 80 + (c / (cols - 1)) * 40
+      const pred = gprPredict(t, p, u)
+      const value = metric === 'mean' ? pred.mean : pred.std
+      min = Math.min(min, value)
+      max = Math.max(max, value)
+      cells.push({ r, c, t, p, value })
+    }
+  }
+  return { cells, min, max, rows, cols }
+}
+
+function colorScale(v, min, max, uncertainty = false) {
+  const n = Math.max(0, Math.min(1, (v - min) / Math.max(max - min, 1e-9)))
+  if (uncertainty) {
+    const hue = 220 - n * 175
+    return `hsl(${hue} 82% ${20 + n * 37}%)`
+  }
+  const hue = 220 - n * 170
+  return `hsl(${hue} 84% ${20 + n * 40}%)`
+}
+
+function Heatmap({ u, metric, t, p }) {
+  const grid = useMemo(() => buildGrid(u, metric), [u, metric])
+  const [hover, setHover] = useState(null)
+  const x = ((t - 80) / 40) * 100
+  const y = ((2 - p) / 1.5) * 100
+  const experimental = DATA.filter(d => d.u === u)
+
+  return (
+    <div className="heatmap-shell">
+      <div className="plot-title-row">
+        <div>
+          <div className="panel-eyebrow">{metric === 'mean' ? 'SURROGATE FIELD' : 'MODEL CONFIDENCE'}</div>
+          <h3>{metric === 'mean' ? 'Predicted Development Rate' : 'Prediction Uncertainty'}</h3>
+        </div>
+        <div className="legend">
+          <span><i className="dot exp-dot" /> experiment</span>
+          <span><i className="dot op-dot" /> operating point</span>
+        </div>
+      </div>
+
+      <div className="heatmap-area">
+        <div className="y-label">hfacH Pressure (Torr)</div>
+        <div className="heatmap-frame">
+          <div
+            className="heatmap-grid"
+            style={{
+              gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
+              gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
+            }}
+          >
+            {grid.cells.map((cell, idx) => (
+              <div
+                key={idx}
+                className="heat-cell"
+                style={{
+                  background: colorScale(
+                    cell.value,
+                    grid.min,
+                    grid.max,
+                    metric === 'std'
+                  ),
+                }}
+                onMouseEnter={() => setHover(cell)}
+                onMouseLeave={() => setHover(null)}
+              />
+            ))}
+          </div>
+
+          {experimental.map((d, i) => (
+            <div
+              key={i}
+              className="exp-marker"
+              style={{
+                left: `${((d.t - 80) / 40) * 100}%`,
+                top: `${((2 - d.p) / 1.5) * 100}%`,
+              }}
+              title={`${d.t} °C · ${d.p} Torr · ${d.y} nm/cycle`}
+            >
+              ×
+            </div>
+          ))}
+
+          <div className="op-marker" style={{ left: `${x}%`, top: `${y}%` }}>
+            <span />
+          </div>
+
+          {hover && (
+            <div
+              className="hover-card"
+              style={{
+                left: `${Math.min(78, (hover.c / (grid.cols - 1)) * 100 + 2)}%`,
+                top: `${Math.min(76, (hover.r / (grid.rows - 1)) * 100 + 2)}%`,
+              }}
+            >
+              <b>{hover.t.toFixed(1)} °C</b>
+              <span>{hover.p.toFixed(3)} Torr</span>
+              <strong>
+                {metric === 'mean'
+                  ? `${hover.value.toFixed(2)} nm/cycle`
+                  : `σ ${hover.value.toFixed(2)}`}
+              </strong>
+            </div>
+          )}
+        </div>
+        <div className="x-label">Temperature (°C)</div>
+      </div>
+
+      <div className="scale-row">
+        <span>{grid.min.toFixed(2)}</span>
+        <div className={`gradient-bar ${metric === 'std' ? 'uncertainty' : ''}`} />
+        <span>{grid.max.toFixed(2)}</span>
+      </div>
+    </div>
+  )
+}
+
+function MetricCard({ icon: Icon, label, value, unit, accent = 'cyan', foot }) {
+  return (
+    <div className="metric-card">
+      <div className={`metric-icon ${accent}`}><Icon size={18} /></div>
+      <div className="metric-label">{label}</div>
+      <div className="metric-main">
+        <span>{value}</span>
+        {unit && <small>{unit}</small>}
+      </div>
+      <div className="metric-foot">{foot}</div>
+    </div>
+  )
+}
+
+function ProcessSchematic({ u }) {
+  const steps = [
+    { icon: Layers3, title: 'MLD Resist', sub: 'Zn–3MP' },
+    { icon: Atom, title: 'EUV Exposure', sub: '13.5 nm' },
+    { icon: Waves, title: 'Dry Develop', sub: 'hfacH' },
+    { icon: ShieldCheck, title: 'Pattern', sub: u ? 'Al₂O₃ integrated' : 'No underlayer' },
+  ]
+
+  return (
+    <div className="process-schematic">
+      {steps.map((s, i) => (
+        <div className="process-step-wrap" key={s.title}>
+          <div className="process-step">
+            <div className="step-icon"><s.icon size={18} /></div>
+            <div>
+              <b>{s.title}</b>
+              <span>{s.sub}</span>
+            </div>
+          </div>
+          {i < steps.length - 1 && <ChevronRight className="process-arrow" size={18} />}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ExperimentPlanner({ u }) {
+  const rows = useMemo(() => {
+    const out = []
+    for (let ti = 0; ti <= 80; ti++) {
+      const t = 80 + ti * 0.5
+      for (let pi = 0; pi <= 60; pi++) {
+        const p = 0.5 + pi * 0.025
+        const pred = gprPredict(t, p, u)
+
+        const close = DATA.filter(d => d.u === u).some(
+          d => Math.abs(t - d.t) < 1.0 && Math.abs(p - d.p) < 0.05
+        )
+        if (!close) {
+          out.push({
+            t,
+            p,
+            mean: pred.mean,
+            std: pred.std,
+            ucb: pred.mean + pred.std,
+          })
+        }
+      }
+    }
+    return out
+  }, [u])
+
+  const top = [...rows].sort((a, b) => b.ucb - a.ucb).slice(0, 6)
+
+  return (
+    <div className="planner-grid">
+      <div className="planner-main">
+        <div className="panel-eyebrow">ACTIVE LEARNING QUEUE</div>
+        <h3>Next Experiment Candidates</h3>
+        <p className="panel-copy">
+          UCB = predicted rate + uncertainty. High-ranking points combine performance potential with information value.
+        </p>
+
+        <div className="experiment-list">
+          {top.map((r, i) => (
+            <div className="experiment-row" key={i}>
+              <div className="rank">0{i + 1}</div>
+              <div>
+                <b>{r.t.toFixed(1)} °C</b>
+                <span>{r.p.toFixed(3)} Torr</span>
+              </div>
+              <div>
+                <b>{r.mean.toFixed(2)}</b>
+                <span>nm/cycle</span>
+              </div>
+              <div>
+                <b>± {r.std.toFixed(2)}</b>
+                <span>uncertainty</span>
+              </div>
+              <div className="ucb-chip">{r.ucb.toFixed(2)} UCB</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="planner-side">
+        <div className="mini-panel accent-panel">
+          <Target size={20} />
+          <span>Exploration</span>
+          <b>120 °C / 2.0 Torr</b>
+          <p>High predicted rate + high uncertainty.</p>
+        </div>
+        <div className="mini-panel">
+          <Radar size={20} />
+          <span>Validation</span>
+          <b>105 °C / 1.5 Torr</b>
+          <p>Mid-space point to check interpolation.</p>
+        </div>
+        <div className="mini-panel">
+          <Microscope size={20} />
+          <span>Factor isolation</span>
+          <b>120 °C / 0.5 Torr</b>
+          <p>Separates temperature and pressure effects.</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function App() {
+  const [temperature, setTemperature] = useState(95)
+  const [pressure, setPressure] = useState(0.95)
+  const [underlayer, setUnderlayer] = useState(1)
+  const [view, setView] = useState('twin')
+
+  const pred = useMemo(
+    () => gprPredict(temperature, pressure, underlayer),
+    [temperature, pressure, underlayer]
+  )
+
+  const confidence =
+    pred.std < 0.25 ? 'HIGH' : pred.std < 0.7 ? 'MEDIUM' : 'LOW'
+
+  const improvement = Math.round((1 - GPR_MAE / LINEAR_MAE) * 100)
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-orbit"><Orbit size={22} /></div>
+          <div>
+            <span>PROCESS INTELLIGENCE</span>
+            <b>Zn–3MP Digital Twin</b>
+          </div>
+        </div>
+
+        <div className="side-section">
+          <div className="side-head">
+            <CircleGauge size={16} />
+            <span>Operating Point</span>
+          </div>
+
+          <label>
+            <div className="label-row">
+              <span>Temperature</span>
+              <strong>{temperature.toFixed(1)} °C</strong>
+            </div>
+            <input
+              type="range"
+              min="80"
+              max="120"
+              step="0.5"
+              value={temperature}
+              onChange={e => setTemperature(Number(e.target.value))}
+            />
+          </label>
+
+          <label>
+            <div className="label-row">
+              <span>hfacH Pressure</span>
+              <strong>{pressure.toFixed(3)} Torr</strong>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.025"
+              value={pressure}
+              onChange={e => setPressure(Number(e.target.value))}
+            />
+          </label>
+
+          <div className="toggle-box">
+            <div>
+              <span>Al₂O₃ Interface</span>
+              <small>{underlayer ? 'Integrated' : 'None'}</small>
+            </div>
+            <button
+              aria-label="Toggle Al2O3 underlayer"
+              className={underlayer ? 'switch on' : 'switch'}
+              onClick={() => setUnderlayer(v => (v ? 0 : 1))}
+            >
+              <i />
+            </button>
+          </div>
+        </div>
+
+        <div className="side-section model-block">
+          <div className="side-head">
+            <BrainCircuit size={16} />
+            <span>Model Engine</span>
+          </div>
+          <div className="model-line"><span>Algorithm</span><b>Gaussian Process</b></div>
+          <div className="model-line"><span>Validation</span><b>LOOCV</b></div>
+          <div className="model-line"><span>Inputs</span><b>3 variables</b></div>
+          <div className="model-line"><span>Training</span><b>12 points</b></div>
+        </div>
+
+        <div className="sidebar-note">
+          <Sparkles size={15} />
+          <p>
+            Figure-derived points are approximate. Predictions prioritize experiments; they do not certify a process optimum.
+          </p>
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="hero">
+          <div className="hero-left">
+            <div className="hero-kicker">
+              <span className="online-dot" />
+              MODEL ONLINE
+              <i />
+              EUV PROCESS DIGITAL TWIN
+            </div>
+            <h1>Zn–3MP Resist<br/><em>Process Intelligence</em></h1>
+            <p>
+              An uncertainty-aware virtual process sensor for dry development.
+              Explore how temperature, hfacH pressure, and Al₂O₃ integration reshape the predicted process field.
+            </p>
+          </div>
+
+          <div className="hero-right">
+            <div className="signal-card">
+              <div className="signal-head">
+                <span>LIVE SURROGATE SENSOR</span>
+                <Activity size={17} />
+              </div>
+              <div className="signal-value">
+                {pred.mean.toFixed(2)}
+                <small>nm/cycle</small>
+              </div>
+              <div className="wave-line">
+                {Array.from({ length: 22 }).map((_, i) => (
+                  <i key={i} style={{ height: `${22 + Math.abs(Math.sin(i * 0.63)) * 34}px` }} />
+                ))}
+              </div>
+              <div className="signal-footer">
+                <span>σ {pred.std.toFixed(3)}</span>
+                <b>{confidence} CONFIDENCE</b>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <ProcessSchematic u={underlayer} />
+
+        <section className="metrics">
+          <MetricCard
+            icon={Gauge}
+            label="Predicted Rate"
+            value={pred.mean.toFixed(2)}
+            unit="nm/cycle"
+            foot={`${temperature.toFixed(1)} °C · ${pressure.toFixed(3)} Torr`}
+          />
+          <MetricCard
+            icon={Radar}
+            label="Uncertainty"
+            value={`± ${pred.std.toFixed(2)}`}
+            accent="amber"
+            foot="posterior standard deviation"
+          />
+          <MetricCard
+            icon={ShieldCheck}
+            label="Model Confidence"
+            value={confidence}
+            accent={confidence === 'HIGH' ? 'green' : 'amber'}
+            foot="uncertainty-aware estimate"
+          />
+          <MetricCard
+            icon={LineChart}
+            label="GPR vs Linear MAE"
+            value={`−${improvement}%`}
+            accent="green"
+            foot={`${GPR_MAE.toFixed(2)} vs ${LINEAR_MAE.toFixed(2)} nm/cycle`}
+          />
+        </section>
+
+        <nav className="view-tabs">
+          <button className={view === 'twin' ? 'active' : ''} onClick={() => setView('twin')}>
+            <Waves size={16} /> Process Twin
+          </button>
+          <button className={view === 'uncertainty' ? 'active' : ''} onClick={() => setView('uncertainty')}>
+            <Radar size={16} /> Uncertainty Field
+          </button>
+          <button className={view === 'planner' ? 'active' : ''} onClick={() => setView('planner')}>
+            <Target size={16} /> Experiment Planner
+          </button>
+          <button className={view === 'data' ? 'active' : ''} onClick={() => setView('data')}>
+            <Database size={16} /> Model Data
+          </button>
+        </nav>
+
+        <section className="workspace">
+          {view === 'twin' && (
+            <div className="workspace-grid">
+              <Heatmap u={underlayer} metric="mean" t={temperature} p={pressure} />
+              <div className="insight-stack">
+                <div className="insight-card">
+                  <div className="panel-eyebrow">OPERATING STATE</div>
+                  <h3>Live Point</h3>
+                  <div className="state-grid">
+                    <div><Thermometer size={16}/><span>Temperature</span><b>{temperature.toFixed(1)} °C</b></div>
+                    <div><Beaker size={16}/><span>Pressure</span><b>{pressure.toFixed(3)} Torr</b></div>
+                    <div><Layers3 size={16}/><span>Interface</span><b>{underlayer ? 'Al₂O₃' : 'None'}</b></div>
+                    <div><Activity size={16}/><span>Rate</span><b>{pred.mean.toFixed(2)}</b></div>
+                  </div>
+                </div>
+
+                <div className="insight-card">
+                  <div className="panel-eyebrow">PROCESS READOUT</div>
+                  <h3>{pred.std < 0.25 ? 'Stable interpolation zone' : pred.std < 0.7 ? 'Moderate model risk' : 'Verification recommended'}</h3>
+                  <p>
+                    {pred.std < 0.25
+                      ? 'The selected point is supported by nearby experimental conditions.'
+                      : pred.std < 0.7
+                      ? 'The model can estimate this region, but uncertainty is no longer negligible.'
+                      : 'The selected operating point lies in a sparse region of the experimental design space.'}
+                  </p>
+                </div>
+
+                <div className="insight-card luminous">
+                  <FlaskConical size={20} />
+                  <div>
+                    <span>NEXT BEST ACTION</span>
+                    <b>Validate high-value sparse regions</b>
+                    <p>Use the experiment planner to rank candidates by UCB.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === 'uncertainty' && (
+            <div className="workspace-grid">
+              <Heatmap u={underlayer} metric="std" t={temperature} p={pressure} />
+              <div className="insight-stack">
+                <div className="insight-card">
+                  <div className="panel-eyebrow">UNCERTAINTY LOGIC</div>
+                  <h3>Where should we measure next?</h3>
+                  <p>
+                    Dark regions are supported by nearby training points. Brighter regions represent larger posterior uncertainty and higher information value.
+                  </p>
+                </div>
+                <div className="insight-card">
+                  <div className="panel-eyebrow">CURRENT σ</div>
+                  <div className="big-number">{pred.std.toFixed(3)}</div>
+                  <p>Posterior standard deviation at the selected operating point.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === 'planner' && <ExperimentPlanner u={underlayer} />}
+
+          {view === 'data' && (
+            <div className="data-panel">
+              <div className="data-head">
+                <div>
+                  <div className="panel-eyebrow">TRAINING FOUNDATION</div>
+                  <h3>Process Dataset</h3>
+                </div>
+                <div className="dataset-chip">{DATA.length} POINTS</div>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Temperature</th>
+                      <th>Pressure</th>
+                      <th>Al₂O₃</th>
+                      <th>Development rate</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {DATA.map((d, i) => (
+                      <tr key={i}>
+                        <td>{d.t.toFixed(1)} °C</td>
+                        <td>{d.p.toFixed(3)} Torr</td>
+                        <td>{d.u ? 'Integrated' : 'None'}</td>
+                        <td>{d.y.toFixed(2)} nm/cycle</td>
+                        <td><span className={`source-chip ${d.source}`}>{d.source}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="validation-strip">
+                <div><span>GPR LOOCV MAE</span><b>{GPR_MAE.toFixed(3)}</b></div>
+                <div><span>Linear LOOCV MAE</span><b>{LINEAR_MAE.toFixed(3)}</b></div>
+                <div><span>Error reduction</span><b>{improvement}%</b></div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <footer>
+          <span>Zn–3MP EUV Resist Process Digital Twin</span>
+          <span>Gaussian Process Regression · uncertainty-aware experiment planning</span>
+        </footer>
+      </main>
+    </div>
+  )
+}
