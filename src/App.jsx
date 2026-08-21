@@ -365,7 +365,9 @@ function ExperimentPlanner({ model, predictor, u }) {
 
 export default function App() {
   const [model, setModel] = useState(null)
+  const [dft, setDft] = useState(null)
   const [loadError, setLoadError] = useState('')
+  const [dftError, setDftError] = useState('')
   const [temperature, setTemperature] = useState(95)
   const [pressure, setPressure] = useState(0.95)
   const [underlayer, setUnderlayer] = useState(1)
@@ -379,6 +381,14 @@ export default function App() {
       })
       .then(setModel)
       .catch(error => setLoadError(error.message))
+
+    fetch('/dft_descriptors.json')
+      .then(response => {
+        if (!response.ok) throw new Error('dft_descriptors.json load failed')
+        return response.json()
+      })
+      .then(setDft)
+      .catch(error => setDftError(error.message))
   }, [])
 
   const predictor = useMemo(() => model ? buildPredictor(model) : null, [model])
@@ -398,7 +408,14 @@ export default function App() {
   const LINEAR_MAE = model.model.metrics.linear_mae
   const confidence = pred.std < 0.25 ? 'HIGH' : pred.std < 0.7 ? 'MEDIUM' : 'LOW'
   const improvement = Math.round((1 - GPR_MAE / LINEAR_MAE) * 100)
-  const dftPending = model.dft_module?.status !== 'ready'
+  const dftReady = Boolean(dft?.reaction_summary?.length && dft?.precursor_descriptor_summary?.length)
+  const dftFunctionals = dftReady
+    ? [...new Set((dft.reaction_functional_results || []).map(r => r.functional))]
+    : []
+  const r1 = dft?.reaction_summary?.find(r => r.reaction_id === 'R1')
+  const r2 = dft?.reaction_summary?.find(r => r.reaction_id === 'R2')
+  const dez = dft?.precursor_descriptor_summary?.find(r => r.species === 'DEZ')
+  const mp3 = dft?.precursor_descriptor_summary?.find(r => r.species === '3MP')
 
   return (
     <div className="app">
@@ -459,7 +476,7 @@ export default function App() {
             <h1>AI-Driven ALD/MLD<br/><em>Process Digital Twin</em></h1>
             <p>
               Gaussian Process Regression predicts dry-development behavior, quantifies posterior uncertainty,
-              and ranks follow-up experiments. Real DFT descriptors will be added as the next AI feature layer.
+              and ranks follow-up experiments. Real DFT ensemble descriptors are loaded as a physics-informed AI layer.
             </p>
           </div>
 
@@ -545,19 +562,96 @@ export default function App() {
           {view === 'dft' && (
             <div className="data-panel">
               <div className="data-head">
-                <div><div className="panel-eyebrow">NEXT AI FEATURE LAYER</div><h3>DFT-Informed GPR</h3></div>
-                <div className="dataset-chip">{dftPending ? 'AWAITING REAL DFT DATA' : 'DFT READY'}</div>
+                <div>
+                  <div className="panel-eyebrow">REAL QUANTUM DESCRIPTOR LAYER</div>
+                  <h3>DFT → AI Physics Features</h3>
+                </div>
+                <div className="dataset-chip">{dftReady ? 'REAL DFT LOADED' : 'DFT FILE NOT LOADED'}</div>
               </div>
-              <div className="validation-strip">
-                {(model.dft_module?.planned_features || []).map(feature => (
-                  <div key={feature}><span>PLANNED FEATURE</span><b style={{fontSize:'12px'}}>{feature.replaceAll('_',' ')}</b></div>
-                ))}
-              </div>
-              <div className="insight-card" style={{marginTop:'14px'}}>
-                <div className="panel-eyebrow">AI EXPERIMENT</div>
-                <h3>Process-only GPR vs DFT-informed GPR</h3>
-                <p>Once real DFT values are available, the same LOOCV protocol will test whether adsorption energy, reaction-energy spread and activation barrier actually reduce prediction error.</p>
-              </div>
+
+              {!dftReady ? (
+                <div className="insight-card" style={{marginTop:'14px'}}>
+                  <div className="panel-eyebrow">LOAD STATUS</div>
+                  <h3>Waiting for dft_descriptors.json</h3>
+                  <p>{dftError || 'Place dft_descriptors.json in the public folder and redeploy.'}</p>
+                </div>
+              ) : (
+                <>
+                  <div className="validation-strip">
+                    <div><span>DFT ENSEMBLE</span><b>{dftFunctionals.length} functionals</b></div>
+                    <div><span>R1 ΔE</span><b>{r1?.reaction_energy_mean_eV.toFixed(3)} eV</b></div>
+                    <div><span>R1 σDFT</span><b>{r1?.reaction_energy_std_eV.toFixed(3)} eV</b></div>
+                    <div><span>R2 ΔE</span><b>{r2?.reaction_energy_mean_eV.toFixed(3)} eV</b></div>
+                    <div><span>R2 σDFT</span><b>{r2?.reaction_energy_std_eV.toFixed(3)} eV</b></div>
+                  </div>
+
+                  <div className="workspace-grid" style={{marginTop:'14px'}}>
+                    <div className="insight-card">
+                      <div className="panel-eyebrow">PRECURSOR DESCRIPTORS</div>
+                      <h3>Electronic Structure Ensemble</h3>
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr><th>Species</th><th>HOMO</th><th>LUMO</th><th>Gap</th><th>Dipole</th></tr>
+                          </thead>
+                          <tbody>
+                            {[dez, mp3].filter(Boolean).map(x => (
+                              <tr key={x.species}>
+                                <td>{x.species}</td>
+                                <td>{x.homo_mean_eV.toFixed(3)} eV</td>
+                                <td>{x.lumo_mean_eV.toFixed(3)} eV</td>
+                                <td>{x.gap_mean_eV.toFixed(3)} eV</td>
+                                <td>{x.dipole_mean_D.toFixed(3)} D</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="insight-stack">
+                      <div className="insight-card">
+                        <div className="panel-eyebrow">R1 · DEZ LIGAND EXCHANGE</div>
+                        <h3>{r1?.reaction_energy_mean_eV.toFixed(3)} ± {r1?.reaction_energy_std_eV.toFixed(3)} eV</h3>
+                        <p>Mean reaction energy ± functional ensemble spread. The spread is treated as a DFT uncertainty descriptor.</p>
+                      </div>
+
+                      <div className="insight-card">
+                        <div className="panel-eyebrow">R2 · 3MP LIGAND EXCHANGE</div>
+                        <h3>{r2?.reaction_energy_mean_eV.toFixed(3)} ± {r2?.reaction_energy_std_eV.toFixed(3)} eV</h3>
+                        <p>R2 shows the larger functional sensitivity, so the quantum calculation itself carries more model-form uncertainty.</p>
+                      </div>
+
+                      <div className="insight-card luminous">
+                        <BrainCircuit size={20} />
+                        <div>
+                          <span>AI INTEGRATION STATUS</span>
+                          <b>Physics layer ready</b>
+                          <p>Next: calculate an activation barrier so the DFT information can vary with temperature instead of being repeated across all 12 process rows.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="insight-card" style={{marginTop:'14px'}}>
+                    <div className="panel-eyebrow">SCIENTIFIC SCOPE</div>
+                    <h3>Molecular surrogate, not periodic surface DFT</h3>
+                    <p>{dft.model_scope?.warning}</p>
+                    <p style={{marginTop:'8px'}}>
+                      Surface proxy: {dft.model_scope?.surface_proxy}. Activation barrier: {dft.activation_barrier?.status?.replaceAll('_',' ')}.
+                    </p>
+                  </div>
+
+                  <div className="insight-card" style={{marginTop:'14px'}}>
+                    <div className="panel-eyebrow">NEXT AI EXPERIMENT</div>
+                    <h3>Process-only GPR → Physics-informed GPR</h3>
+                    <p>
+                      The present 12 process points use the same Zn–3MP chemistry, so static DFT values cannot simply be copied into every row.
+                      The next meaningful feature is a kinetics-aware descriptor derived from the activation barrier and temperature, followed by the same LOOCV comparison.
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -594,7 +688,7 @@ export default function App() {
 
         <footer>
           <span>AI-Driven Zn–3MP Process Digital Twin</span>
-          <span>Colab-trained GPR · uncertainty-aware prediction · active learning · DFT-ready architecture</span>
+          <span>Colab-trained GPR · uncertainty-aware prediction · active learning · real DFT descriptor layer</span>
         </footer>
       </main>
     </div>
