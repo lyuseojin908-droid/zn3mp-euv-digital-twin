@@ -1,0 +1,162 @@
+{
+  "project": "AI-driven Zn-3MP ALD/MLD Digital Twin",
+  "calculation_level": {
+    "geometry_optimization": "PBE/def2-svp",
+    "single_point_basis": "def2-svp",
+    "functionals_requested": [
+      "PBE",
+      "B3LYP",
+      "PBE0",
+      "M06-2X",
+      "CAM-B3LYP",
+      "WB97X-D"
+    ],
+    "functionals_used": [
+      "PBE",
+      "B3LYP",
+      "PBE0",
+      "M06-2X",
+      "CAM-B3LYP"
+    ]
+  },
+  "model_scope": {
+    "type": "molecular_surrogate",
+    "surface_proxy": "methanol used as a minimal proxy for surface-OH chemistry",
+    "warning": "These values are quantum descriptors for AI feature engineering, not periodic-surface ALD reaction energies."
+  },
+  "precursor_descriptor_summary": [
+    {
+      "species": "3MP",
+      "homo_mean_eV": -6.90099347,
+      "homo_std_eV": 1.1072678,
+      "lumo_mean_eV": 1.02932086,
+      "lumo_std_eV": 0.82821026,
+      "gap_mean_eV": 7.93031433,
+      "gap_std_eV": 1.93455177,
+      "dipole_mean_D": 1.91662252,
+      "dipole_std_D": 0.04641265,
+      "n_functionals": 5
+    },
+    {
+      "species": "DEZ",
+      "homo_mean_eV": -6.62035767,
+      "homo_std_eV": 0.98794298,
+      "lumo_mean_eV": 0.44578469,
+      "lumo_std_eV": 0.562119,
+      "gap_mean_eV": 7.06614236,
+      "gap_std_eV": 1.54190185,
+      "dipole_mean_D": 0.17012312,
+      "dipole_std_D": 0.01245774,
+      "n_functionals": 5
+    }
+  ],
+  "reaction_functional_results": [
+    {
+      "reaction_id": "R1",
+      "reaction_name": "DEZ ligand-exchange surrogate",
+      "functional": "PBE",
+      "reaction_energy_eV": -0.78107512
+    },
+    {
+      "reaction_id": "R1",
+      "reaction_name": "DEZ ligand-exchange surrogate",
+      "functional": "B3LYP",
+      "reaction_energy_eV": -0.85842125
+    },
+    {
+      "reaction_id": "R1",
+      "reaction_name": "DEZ ligand-exchange surrogate",
+      "functional": "PBE0",
+      "reaction_energy_eV": -0.76904583
+    },
+    {
+      "reaction_id": "R1",
+      "reaction_name": "DEZ ligand-exchange surrogate",
+      "functional": "M06-2X",
+      "reaction_energy_eV": -0.76774607
+    },
+    {
+      "reaction_id": "R1",
+      "reaction_name": "DEZ ligand-exchange surrogate",
+      "functional": "CAM-B3LYP",
+      "reaction_energy_eV": -0.86825508
+    },
+    {
+      "reaction_id": "R2",
+      "reaction_name": "3MP ligand-exchange surrogate",
+      "functional": "PBE",
+      "reaction_energy_eV": -1.46831118
+    },
+    {
+      "reaction_id": "R2",
+      "reaction_name": "3MP ligand-exchange surrogate",
+      "functional": "B3LYP",
+      "reaction_energy_eV": -1.47512904
+    },
+    {
+      "reaction_id": "R2",
+      "reaction_name": "3MP ligand-exchange surrogate",
+      "functional": "PBE0",
+      "reaction_energy_eV": -1.55503043
+    },
+    {
+      "reaction_id": "R2",
+      "reaction_name": "3MP ligand-exchange surrogate",
+      "functional": "M06-2X",
+      "reaction_energy_eV": -1.7436162
+    },
+    {
+      "reaction_id": "R2",
+      "reaction_name": "3MP ligand-exchange surrogate",
+      "functional": "CAM-B3LYP",
+      "reaction_energy_eV": -1.53895909
+    }
+  ],
+  "reaction_summary": [
+    {
+      "reaction_id": "R1",
+      "reaction_name": "DEZ ligand-exchange surrogate",
+      "reaction_energy_mean_eV": -0.80890867,
+      "reaction_energy_std_eV": 0.05007895,
+      "reaction_energy_min_eV": -0.86825508,
+      "reaction_energy_max_eV": -0.76774607,
+      "n_functionals": 5,
+      "functional_range_eV": 0.10050901
+    },
+    {
+      "reaction_id": "R2",
+      "reaction_name": "3MP ligand-exchange surrogate",
+      "reaction_energy_mean_eV": -1.55620919,
+      "reaction_energy_std_eV": 0.11149035,
+      "reaction_energy_min_eV": -1.7436162,
+      "reaction_energy_max_eV": -1.46831118,
+      "n_functionals": 5,
+      "functional_range_eV": 0.27530502
+    }
+  ],
+  "activation_barrier": {
+    "status": "not_computed_yet",
+    "value_eV": null,
+    "next_method": "constrained reaction-coordinate scan / transition-state calculation"
+  },
+  "geometry_status": {
+    "methanol": "optimized",
+    "DEZ": "optimized",
+    "ethane": "optimized",
+    "3MP": "optimized",
+    "R1_product": "optimized",
+    "R2_product": "optimized"
+  },
+  "ai_role": {
+    "current": [
+      "DFT ensemble descriptors",
+      "functional-spread uncertainty"
+    ],
+    "next": [
+      "DFT-informed Gaussian Process",
+      "baseline-vs-DFT-informed LOOCV comparison",
+      "explainable AI / feature importance",
+      "multi-source uncertainty-aware active learning"
+    ]
+  }
+}
