@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   Atom,
@@ -21,49 +21,6 @@ import {
   Waves,
 } from 'lucide-react'
 
-const DATA = [
-  { t: 80,  p: 1.0, u: 0, y: 1.17, source: 'text' },
-  { t: 90,  p: 1.0, u: 0, y: 2.50, source: 'text' },
-  { t: 100, p: 1.0, u: 0, y: 4.00, source: 'figure' },
-
-  { t: 80,  p: 1.0, u: 1, y: 1.00, source: 'text' },
-  { t: 90,  p: 1.0, u: 1, y: 2.00, source: 'text' },
-  { t: 100, p: 1.0, u: 1, y: 3.30, source: 'figure' },
-  { t: 110, p: 1.0, u: 1, y: 6.60, source: 'figure' },
-  { t: 120, p: 1.0, u: 1, y: 9.80, source: 'figure' },
-
-  { t: 90, p: 0.5, u: 0, y: 1.25, source: 'text' },
-  { t: 90, p: 2.0, u: 0, y: 5.00, source: 'figure' },
-  { t: 90, p: 0.5, u: 1, y: 1.00, source: 'figure' },
-  { t: 90, p: 2.0, u: 1, y: 4.00, source: 'figure' },
-]
-
-// Hyperparameters reproduced from the trained sklearn GPR:
-// 1.84**2 * RBF(length_scale=[1.65, 6.7, 11.6]) + WhiteKernel(noise_level=1e-5)
-const X_MEAN = [94.16666667, 1.08333333, 0.58333333]
-const X_SCALE = [11.14924013, 0.44876373, 0.49300665]
-const Y_MEAN = 3.4683333333333333
-const Y_STD = 2.554723838086788
-const SIGNAL = 1.84 ** 2
-const LENGTH = [1.65, 6.7, 11.6]
-const NOISE = 1e-5
-
-const GPR_MAE = 0.2503
-const LINEAR_MAE = 0.8050
-
-function standardize(x) {
-  return x.map((v, i) => (v - X_MEAN[i]) / X_SCALE[i])
-}
-
-function rbf(a, b) {
-  let q = 0
-  for (let i = 0; i < 3; i++) {
-    const d = (a[i] - b[i]) / LENGTH[i]
-    q += d * d
-  }
-  return SIGNAL * Math.exp(-0.5 * q)
-}
-
 function cholesky(A) {
   const n = A.length
   const L = Array.from({ length: n }, () => Array(n).fill(0))
@@ -84,12 +41,11 @@ function cholesky(A) {
 }
 
 function forwardSolve(L, b) {
-  const n = b.length
-  const y = Array(n).fill(0)
-  for (let i = 0; i < n; i++) {
-    let s = 0
-    for (let j = 0; j < i; j++) s += L[i][j] * y[j]
-    y[i] = (b[i] - s) / L[i][i]
+  const y = Array(b.length).fill(0)
+  for (let i = 0; i < b.length; i++) {
+    let sum = 0
+    for (let j = 0; j < i; j++) sum += L[i][j] * y[j]
+    y[i] = (b[i] - sum) / L[i][i]
   }
   return y
 }
@@ -98,38 +54,66 @@ function backwardSolve(L, y) {
   const n = y.length
   const x = Array(n).fill(0)
   for (let i = n - 1; i >= 0; i--) {
-    let s = 0
-    for (let j = i + 1; j < n; j++) s += L[j][i] * x[j]
-    x[i] = (y[i] - s) / L[i][i]
+    let sum = 0
+    for (let j = i + 1; j < n; j++) sum += L[j][i] * x[j]
+    x[i] = (y[i] - sum) / L[i][i]
   }
   return x
 }
 
 function dot(a, b) {
-  return a.reduce((s, v, i) => s + v * b[i], 0)
+  return a.reduce((sum, value, i) => sum + value * b[i], 0)
 }
 
-const TRAIN_X = DATA.map(d => standardize([d.t, d.p, d.u]))
-const TRAIN_Y = DATA.map(d => (d.y - Y_MEAN) / Y_STD)
-const K = TRAIN_X.map((a, i) =>
-  TRAIN_X.map((b, j) => rbf(a, b) + (i === j ? NOISE : 0))
-)
-const L = cholesky(K)
-const alpha = backwardSolve(L, forwardSolve(L, TRAIN_Y))
+function buildPredictor(modelJson) {
+  const trainingData = modelJson.training_data
+  const xMean = modelJson.scaler.mean
+  const xScale = modelJson.scaler.scale
+  const yMean = modelJson.target_normalization.mean
+  const yStd = modelJson.target_normalization.std
+  const signal = modelJson.kernel.constant_value
+  const lengthScale = modelJson.kernel.rbf_length_scale
+  const noise = modelJson.kernel.noise_level
 
-function gprPredict(t, p, u) {
-  const x = standardize([t, p, u])
-  const k = TRAIN_X.map(xi => rbf(x, xi))
-  const meanNorm = dot(k, alpha)
-  const v = forwardSolve(L, k)
-  const varNorm = Math.max(SIGNAL + NOISE - dot(v, v), 0)
-  return {
-    mean: Y_MEAN + Y_STD * meanNorm,
-    std: Y_STD * Math.sqrt(varNorm),
+  const standardize = x => x.map((value, i) => (value - xMean[i]) / xScale[i])
+
+  const kernel = (a, b) => {
+    let q = 0
+    for (let i = 0; i < a.length; i++) {
+      const d = (a[i] - b[i]) / lengthScale[i]
+      q += d * d
+    }
+    return signal * Math.exp(-0.5 * q)
+  }
+
+  const trainX = trainingData.map(d =>
+    standardize([d.temperature_C, d.pressure_Torr, d.underlayer])
+  )
+  const trainY = trainingData.map(d =>
+    (d.dev_rate_nm_cycle - yMean) / yStd
+  )
+
+  const K = trainX.map((a, i) =>
+    trainX.map((b, j) => kernel(a, b) + (i === j ? noise : 0))
+  )
+  const L = cholesky(K)
+  const alpha = backwardSolve(L, forwardSolve(L, trainY))
+
+  return (temperature, pressure, underlayer) => {
+    const x = standardize([temperature, pressure, underlayer])
+    const kStar = trainX.map(xi => kernel(x, xi))
+    const meanNorm = dot(kStar, alpha)
+    const v = forwardSolve(L, kStar)
+    const varNorm = Math.max(signal + noise - dot(v, v), 0)
+
+    return {
+      mean: yMean + yStd * meanNorm,
+      std: yStd * Math.sqrt(varNorm),
+    }
   }
 }
 
-function buildGrid(u, metric = 'mean', rows = 25, cols = 41) {
+function buildGrid(predictor, u, metric = 'mean', rows = 25, cols = 41) {
   const cells = []
   let min = Infinity
   let max = -Infinity
@@ -138,7 +122,7 @@ function buildGrid(u, metric = 'mean', rows = 25, cols = 41) {
     const p = 2.0 - (r / (rows - 1)) * 1.5
     for (let c = 0; c < cols; c++) {
       const t = 80 + (c / (cols - 1)) * 40
-      const pred = gprPredict(t, p, u)
+      const pred = predictor(t, p, u)
       const value = metric === 'mean' ? pred.mean : pred.std
       min = Math.min(min, value)
       max = Math.max(max, value)
@@ -158,12 +142,12 @@ function colorScale(v, min, max, uncertainty = false) {
   return `hsl(${hue} 84% ${20 + n * 40}%)`
 }
 
-function Heatmap({ u, metric, t, p }) {
-  const grid = useMemo(() => buildGrid(u, metric), [u, metric])
+function Heatmap({ predictor, trainingData, u, metric, t, p }) {
+  const grid = useMemo(() => buildGrid(predictor, u, metric), [predictor, u, metric])
   const [hover, setHover] = useState(null)
   const x = ((t - 80) / 40) * 100
   const y = ((2 - p) / 1.5) * 100
-  const experimental = DATA.filter(d => d.u === u)
+  const experimental = trainingData.filter(d => d.underlayer === u)
 
   return (
     <div className="heatmap-shell">
@@ -211,10 +195,10 @@ function Heatmap({ u, metric, t, p }) {
               key={i}
               className="exp-marker"
               style={{
-                left: `${((d.t - 80) / 40) * 100}%`,
-                top: `${((2 - d.p) / 1.5) * 100}%`,
+                left: `${((d.temperature_C - 80) / 40) * 100}%`,
+                top: `${((2 - d.pressure_Torr) / 1.5) * 100}%`,
               }}
-              title={`${d.t} °C · ${d.p} Torr · ${d.y} nm/cycle`}
+              title={`${d.temperature_C} °C · ${d.pressure_Torr} Torr · ${d.dev_rate_nm_cycle} nm/cycle`}
             >
               ×
             </div>
@@ -294,33 +278,35 @@ function ProcessSchematic({ u }) {
   )
 }
 
-function ExperimentPlanner({ u }) {
-  const rows = useMemo(() => {
-    const out = []
+function ExperimentPlanner({ model, predictor, u }) {
+  const top = useMemo(() => {
+    if (u === 1 && model.recommended_experiments?.length) {
+      return model.recommended_experiments.slice(0, 6).map(r => ({
+        t: r.temperature_C,
+        p: r.pressure_Torr,
+        mean: r.pred_rate,
+        std: r.uncertainty,
+        ucb: r.ucb_score,
+      }))
+    }
+
+    const candidates = []
     for (let ti = 0; ti <= 80; ti++) {
       const t = 80 + ti * 0.5
       for (let pi = 0; pi <= 60; pi++) {
         const p = 0.5 + pi * 0.025
-        const pred = gprPredict(t, p, u)
+        const pred = predictor(t, p, u)
+        const close = model.training_data
+          .filter(d => d.underlayer === u)
+          .some(d => Math.abs(t - d.temperature_C) < 1.0 && Math.abs(p - d.pressure_Torr) < 0.05)
 
-        const close = DATA.filter(d => d.u === u).some(
-          d => Math.abs(t - d.t) < 1.0 && Math.abs(p - d.p) < 0.05
-        )
         if (!close) {
-          out.push({
-            t,
-            p,
-            mean: pred.mean,
-            std: pred.std,
-            ucb: pred.mean + pred.std,
-          })
+          candidates.push({ t, p, mean: pred.mean, std: pred.std, ucb: pred.mean + pred.std })
         }
       }
     }
-    return out
-  }, [u])
-
-  const top = [...rows].sort((a, b) => b.ucb - a.ucb).slice(0, 6)
+    return candidates.sort((a, b) => b.ucb - a.ucb).slice(0, 6)
+  }, [model, predictor, u])
 
   return (
     <div className="planner-grid">
@@ -357,20 +343,20 @@ function ExperimentPlanner({ u }) {
         <div className="mini-panel accent-panel">
           <Target size={20} />
           <span>Exploration</span>
-          <b>120 °C / 2.0 Torr</b>
-          <p>High predicted rate + high uncertainty.</p>
+          <b>Highest UCB candidate</b>
+          <p>Searches for high predicted performance and high information value.</p>
         </div>
         <div className="mini-panel">
           <Radar size={20} />
           <span>Validation</span>
-          <b>105 °C / 1.5 Torr</b>
-          <p>Mid-space point to check interpolation.</p>
+          <b>Uncertainty-aware</b>
+          <p>Uses posterior σ instead of treating every prediction as equally reliable.</p>
         </div>
         <div className="mini-panel">
           <Microscope size={20} />
-          <span>Factor isolation</span>
-          <b>120 °C / 0.5 Torr</b>
-          <p>Separates temperature and pressure effects.</p>
+          <span>Colab linked</span>
+          <b>JSON model source</b>
+          <p>The dashboard loads scaler, kernel, metrics and experiment ranks from Colab output.</p>
         </div>
       </div>
     </div>
@@ -378,20 +364,41 @@ function ExperimentPlanner({ u }) {
 }
 
 export default function App() {
+  const [model, setModel] = useState(null)
+  const [loadError, setLoadError] = useState('')
   const [temperature, setTemperature] = useState(95)
   const [pressure, setPressure] = useState(0.95)
   const [underlayer, setUnderlayer] = useState(1)
   const [view, setView] = useState('twin')
 
+  useEffect(() => {
+    fetch('/digital_twin_model.json')
+      .then(response => {
+        if (!response.ok) throw new Error('digital_twin_model.json load failed')
+        return response.json()
+      })
+      .then(setModel)
+      .catch(error => setLoadError(error.message))
+  }, [])
+
+  const predictor = useMemo(() => model ? buildPredictor(model) : null, [model])
   const pred = useMemo(
-    () => gprPredict(temperature, pressure, underlayer),
-    [temperature, pressure, underlayer]
+    () => predictor ? predictor(temperature, pressure, underlayer) : null,
+    [predictor, temperature, pressure, underlayer]
   )
 
-  const confidence =
-    pred.std < 0.25 ? 'HIGH' : pred.std < 0.7 ? 'MEDIUM' : 'LOW'
+  if (loadError) {
+    return <div style={{padding:'40px',color:'#fff'}}>Model load error: {loadError}</div>
+  }
+  if (!model || !predictor || !pred) {
+    return <div style={{padding:'40px',color:'#fff'}}>Loading Colab AI model…</div>
+  }
 
+  const GPR_MAE = model.model.metrics.gpr_mae
+  const LINEAR_MAE = model.model.metrics.linear_mae
+  const confidence = pred.std < 0.25 ? 'HIGH' : pred.std < 0.7 ? 'MEDIUM' : 'LOW'
   const improvement = Math.round((1 - GPR_MAE / LINEAR_MAE) * 100)
+  const dftPending = model.dft_module?.status !== 'ready'
 
   return (
     <div className="app">
@@ -399,7 +406,7 @@ export default function App() {
         <div className="brand">
           <div className="brand-orbit"><Orbit size={22} /></div>
           <div>
-            <span>PROCESS INTELLIGENCE</span>
+            <span>AI PROCESS INTELLIGENCE</span>
             <b>Zn–3MP Digital Twin</b>
           </div>
         </div>
@@ -411,65 +418,36 @@ export default function App() {
           </div>
 
           <label>
-            <div className="label-row">
-              <span>Temperature</span>
-              <strong>{temperature.toFixed(1)} °C</strong>
-            </div>
-            <input
-              type="range"
-              min="80"
-              max="120"
-              step="0.5"
-              value={temperature}
-              onChange={e => setTemperature(Number(e.target.value))}
-            />
+            <div className="label-row"><span>Temperature</span><strong>{temperature.toFixed(1)} °C</strong></div>
+            <input type="range" min="80" max="120" step="0.5" value={temperature}
+              onChange={e => setTemperature(Number(e.target.value))} />
           </label>
 
           <label>
-            <div className="label-row">
-              <span>hfacH Pressure</span>
-              <strong>{pressure.toFixed(3)} Torr</strong>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="2"
-              step="0.025"
-              value={pressure}
-              onChange={e => setPressure(Number(e.target.value))}
-            />
+            <div className="label-row"><span>hfacH Pressure</span><strong>{pressure.toFixed(3)} Torr</strong></div>
+            <input type="range" min="0.5" max="2" step="0.025" value={pressure}
+              onChange={e => setPressure(Number(e.target.value))} />
           </label>
 
           <div className="toggle-box">
-            <div>
-              <span>Al₂O₃ Interface</span>
-              <small>{underlayer ? 'Integrated' : 'None'}</small>
-            </div>
-            <button
-              aria-label="Toggle Al2O3 underlayer"
-              className={underlayer ? 'switch on' : 'switch'}
-              onClick={() => setUnderlayer(v => (v ? 0 : 1))}
-            >
-              <i />
-            </button>
+            <div><span>Al₂O₃ Interface</span><small>{underlayer ? 'Integrated' : 'None'}</small></div>
+            <button aria-label="Toggle Al2O3 underlayer" className={underlayer ? 'switch on' : 'switch'}
+              onClick={() => setUnderlayer(v => (v ? 0 : 1))}><i /></button>
           </div>
         </div>
 
         <div className="side-section model-block">
-          <div className="side-head">
-            <BrainCircuit size={16} />
-            <span>Model Engine</span>
-          </div>
+          <div className="side-head"><BrainCircuit size={16} /><span>AI Engine</span></div>
           <div className="model-line"><span>Algorithm</span><b>Gaussian Process</b></div>
           <div className="model-line"><span>Validation</span><b>LOOCV</b></div>
-          <div className="model-line"><span>Inputs</span><b>3 variables</b></div>
-          <div className="model-line"><span>Training</span><b>12 points</b></div>
+          <div className="model-line"><span>Inputs</span><b>{model.model.features.length} variables</b></div>
+          <div className="model-line"><span>Training</span><b>{model.training_data.length} points</b></div>
         </div>
 
         <div className="sidebar-note">
           <Sparkles size={15} />
           <p>
-            Figure-derived points are approximate. Predictions prioritize experiments; they do not certify a process optimum.
+            Colab-trained scaler, GPR kernel, validation metrics and active-learning candidates are loaded from JSON.
           </p>
         </div>
       </aside>
@@ -477,38 +455,24 @@ export default function App() {
       <main className="main">
         <header className="hero">
           <div className="hero-left">
-            <div className="hero-kicker">
-              <span className="online-dot" />
-              MODEL ONLINE
-              <i />
-              EUV PROCESS DIGITAL TWIN
-            </div>
-            <h1>Zn–3MP Resist<br/><em>Process Intelligence</em></h1>
+            <div className="hero-kicker"><span className="online-dot" />MODEL ONLINE<i />COLAB → REACT → NETLIFY</div>
+            <h1>AI-Driven ALD/MLD<br/><em>Process Digital Twin</em></h1>
             <p>
-              An uncertainty-aware virtual process sensor for dry development.
-              Explore how temperature, hfacH pressure, and Al₂O₃ integration reshape the predicted process field.
+              Gaussian Process Regression predicts dry-development behavior, quantifies posterior uncertainty,
+              and ranks follow-up experiments. Real DFT descriptors will be added as the next AI feature layer.
             </p>
           </div>
 
           <div className="hero-right">
             <div className="signal-card">
-              <div className="signal-head">
-                <span>LIVE SURROGATE SENSOR</span>
-                <Activity size={17} />
-              </div>
-              <div className="signal-value">
-                {pred.mean.toFixed(2)}
-                <small>nm/cycle</small>
-              </div>
+              <div className="signal-head"><span>LIVE AI SENSOR</span><Activity size={17} /></div>
+              <div className="signal-value">{pred.mean.toFixed(2)}<small>nm/cycle</small></div>
               <div className="wave-line">
                 {Array.from({ length: 22 }).map((_, i) => (
                   <i key={i} style={{ height: `${22 + Math.abs(Math.sin(i * 0.63)) * 34}px` }} />
                 ))}
               </div>
-              <div className="signal-footer">
-                <span>σ {pred.std.toFixed(3)}</span>
-                <b>{confidence} CONFIDENCE</b>
-              </div>
+              <div className="signal-footer"><span>σ {pred.std.toFixed(3)}</span><b>{confidence} CONFIDENCE</b></div>
             </div>
           </div>
         </header>
@@ -516,59 +480,31 @@ export default function App() {
         <ProcessSchematic u={underlayer} />
 
         <section className="metrics">
-          <MetricCard
-            icon={Gauge}
-            label="Predicted Rate"
-            value={pred.mean.toFixed(2)}
-            unit="nm/cycle"
-            foot={`${temperature.toFixed(1)} °C · ${pressure.toFixed(3)} Torr`}
-          />
-          <MetricCard
-            icon={Radar}
-            label="Uncertainty"
-            value={`± ${pred.std.toFixed(2)}`}
-            accent="amber"
-            foot="posterior standard deviation"
-          />
-          <MetricCard
-            icon={ShieldCheck}
-            label="Model Confidence"
-            value={confidence}
-            accent={confidence === 'HIGH' ? 'green' : 'amber'}
-            foot="uncertainty-aware estimate"
-          />
-          <MetricCard
-            icon={LineChart}
-            label="GPR vs Linear MAE"
-            value={`−${improvement}%`}
-            accent="green"
-            foot={`${GPR_MAE.toFixed(2)} vs ${LINEAR_MAE.toFixed(2)} nm/cycle`}
-          />
+          <MetricCard icon={Gauge} label="Predicted Rate" value={pred.mean.toFixed(2)} unit="nm/cycle"
+            foot={`${temperature.toFixed(1)} °C · ${pressure.toFixed(3)} Torr`} />
+          <MetricCard icon={Radar} label="Uncertainty" value={`± ${pred.std.toFixed(2)}`} accent="amber"
+            foot="posterior standard deviation" />
+          <MetricCard icon={ShieldCheck} label="Model Confidence" value={confidence}
+            accent={confidence === 'HIGH' ? 'green' : 'amber'} foot="uncertainty-aware estimate" />
+          <MetricCard icon={LineChart} label="GPR vs Linear MAE" value={`−${improvement}%`} accent="green"
+            foot={`${GPR_MAE.toFixed(3)} vs ${LINEAR_MAE.toFixed(3)} nm/cycle`} />
         </section>
 
         <nav className="view-tabs">
-          <button className={view === 'twin' ? 'active' : ''} onClick={() => setView('twin')}>
-            <Waves size={16} /> Process Twin
-          </button>
-          <button className={view === 'uncertainty' ? 'active' : ''} onClick={() => setView('uncertainty')}>
-            <Radar size={16} /> Uncertainty Field
-          </button>
-          <button className={view === 'planner' ? 'active' : ''} onClick={() => setView('planner')}>
-            <Target size={16} /> Experiment Planner
-          </button>
-          <button className={view === 'data' ? 'active' : ''} onClick={() => setView('data')}>
-            <Database size={16} /> Model Data
-          </button>
+          <button className={view === 'twin' ? 'active' : ''} onClick={() => setView('twin')}><Waves size={16} /> Process Twin</button>
+          <button className={view === 'uncertainty' ? 'active' : ''} onClick={() => setView('uncertainty')}><Radar size={16} /> Uncertainty Field</button>
+          <button className={view === 'planner' ? 'active' : ''} onClick={() => setView('planner')}><Target size={16} /> Active Learning</button>
+          <button className={view === 'dft' ? 'active' : ''} onClick={() => setView('dft')}><Atom size={16} /> DFT → AI</button>
+          <button className={view === 'data' ? 'active' : ''} onClick={() => setView('data')}><Database size={16} /> Model Data</button>
         </nav>
 
         <section className="workspace">
           {view === 'twin' && (
             <div className="workspace-grid">
-              <Heatmap u={underlayer} metric="mean" t={temperature} p={pressure} />
+              <Heatmap predictor={predictor} trainingData={model.training_data} u={underlayer} metric="mean" t={temperature} p={pressure} />
               <div className="insight-stack">
                 <div className="insight-card">
-                  <div className="panel-eyebrow">OPERATING STATE</div>
-                  <h3>Live Point</h3>
+                  <div className="panel-eyebrow">OPERATING STATE</div><h3>Live Point</h3>
                   <div className="state-grid">
                     <div><Thermometer size={16}/><span>Temperature</span><b>{temperature.toFixed(1)} °C</b></div>
                     <div><Beaker size={16}/><span>Pressure</span><b>{pressure.toFixed(3)} Torr</b></div>
@@ -578,24 +514,17 @@ export default function App() {
                 </div>
 
                 <div className="insight-card">
-                  <div className="panel-eyebrow">PROCESS READOUT</div>
+                  <div className="panel-eyebrow">AI READOUT</div>
                   <h3>{pred.std < 0.25 ? 'Stable interpolation zone' : pred.std < 0.7 ? 'Moderate model risk' : 'Verification recommended'}</h3>
-                  <p>
-                    {pred.std < 0.25
-                      ? 'The selected point is supported by nearby experimental conditions.'
-                      : pred.std < 0.7
-                      ? 'The model can estimate this region, but uncertainty is no longer negligible.'
-                      : 'The selected operating point lies in a sparse region of the experimental design space.'}
-                  </p>
+                  <p>{pred.std < 0.25
+                    ? 'The selected point is supported by nearby experimental conditions.'
+                    : pred.std < 0.7
+                    ? 'The model can estimate this region, but uncertainty is no longer negligible.'
+                    : 'The selected operating point lies in a sparse region of the experimental design space.'}</p>
                 </div>
 
                 <div className="insight-card luminous">
-                  <FlaskConical size={20} />
-                  <div>
-                    <span>NEXT BEST ACTION</span>
-                    <b>Validate high-value sparse regions</b>
-                    <p>Use the experiment planner to rank candidates by UCB.</p>
-                  </div>
+                  <FlaskConical size={20} /><div><span>NEXT BEST ACTION</span><b>Use active learning</b><p>Rank experiments with prediction + uncertainty.</p></div>
                 </div>
               </div>
             </div>
@@ -603,53 +532,51 @@ export default function App() {
 
           {view === 'uncertainty' && (
             <div className="workspace-grid">
-              <Heatmap u={underlayer} metric="std" t={temperature} p={pressure} />
+              <Heatmap predictor={predictor} trainingData={model.training_data} u={underlayer} metric="std" t={temperature} p={pressure} />
               <div className="insight-stack">
-                <div className="insight-card">
-                  <div className="panel-eyebrow">UNCERTAINTY LOGIC</div>
-                  <h3>Where should we measure next?</h3>
-                  <p>
-                    Dark regions are supported by nearby training points. Brighter regions represent larger posterior uncertainty and higher information value.
-                  </p>
-                </div>
-                <div className="insight-card">
-                  <div className="panel-eyebrow">CURRENT σ</div>
-                  <div className="big-number">{pred.std.toFixed(3)}</div>
-                  <p>Posterior standard deviation at the selected operating point.</p>
-                </div>
+                <div className="insight-card"><div className="panel-eyebrow">UNCERTAINTY LOGIC</div><h3>AI knows what it does not know</h3><p>High-σ regions become experiment candidates instead of being treated as equally reliable predictions.</p></div>
+                <div className="insight-card"><div className="panel-eyebrow">CURRENT σ</div><div className="big-number">{pred.std.toFixed(3)}</div><p>Posterior standard deviation at the selected operating point.</p></div>
               </div>
             </div>
           )}
 
-          {view === 'planner' && <ExperimentPlanner u={underlayer} />}
+          {view === 'planner' && <ExperimentPlanner model={model} predictor={predictor} u={underlayer} />}
+
+          {view === 'dft' && (
+            <div className="data-panel">
+              <div className="data-head">
+                <div><div className="panel-eyebrow">NEXT AI FEATURE LAYER</div><h3>DFT-Informed GPR</h3></div>
+                <div className="dataset-chip">{dftPending ? 'AWAITING REAL DFT DATA' : 'DFT READY'}</div>
+              </div>
+              <div className="validation-strip">
+                {(model.dft_module?.planned_features || []).map(feature => (
+                  <div key={feature}><span>PLANNED FEATURE</span><b style={{fontSize:'12px'}}>{feature.replaceAll('_',' ')}</b></div>
+                ))}
+              </div>
+              <div className="insight-card" style={{marginTop:'14px'}}>
+                <div className="panel-eyebrow">AI EXPERIMENT</div>
+                <h3>Process-only GPR vs DFT-informed GPR</h3>
+                <p>Once real DFT values are available, the same LOOCV protocol will test whether adsorption energy, reaction-energy spread and activation barrier actually reduce prediction error.</p>
+              </div>
+            </div>
+          )}
 
           {view === 'data' && (
             <div className="data-panel">
               <div className="data-head">
-                <div>
-                  <div className="panel-eyebrow">TRAINING FOUNDATION</div>
-                  <h3>Process Dataset</h3>
-                </div>
-                <div className="dataset-chip">{DATA.length} POINTS</div>
+                <div><div className="panel-eyebrow">TRAINING FOUNDATION</div><h3>Process Dataset</h3></div>
+                <div className="dataset-chip">{model.training_data.length} POINTS</div>
               </div>
               <div className="table-wrap">
                 <table>
-                  <thead>
-                    <tr>
-                      <th>Temperature</th>
-                      <th>Pressure</th>
-                      <th>Al₂O₃</th>
-                      <th>Development rate</th>
-                      <th>Source</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Temperature</th><th>Pressure</th><th>Al₂O₃</th><th>Development rate</th><th>Source</th></tr></thead>
                   <tbody>
-                    {DATA.map((d, i) => (
+                    {model.training_data.map((d, i) => (
                       <tr key={i}>
-                        <td>{d.t.toFixed(1)} °C</td>
-                        <td>{d.p.toFixed(3)} Torr</td>
-                        <td>{d.u ? 'Integrated' : 'None'}</td>
-                        <td>{d.y.toFixed(2)} nm/cycle</td>
+                        <td>{d.temperature_C.toFixed(1)} °C</td>
+                        <td>{d.pressure_Torr.toFixed(3)} Torr</td>
+                        <td>{d.underlayer ? 'Integrated' : 'None'}</td>
+                        <td>{d.dev_rate_nm_cycle.toFixed(2)} nm/cycle</td>
                         <td><span className={`source-chip ${d.source}`}>{d.source}</span></td>
                       </tr>
                     ))}
@@ -666,8 +593,8 @@ export default function App() {
         </section>
 
         <footer>
-          <span>Zn–3MP EUV Resist Process Digital Twin</span>
-          <span>Gaussian Process Regression · uncertainty-aware experiment planning</span>
+          <span>AI-Driven Zn–3MP Process Digital Twin</span>
+          <span>Colab-trained GPR · uncertainty-aware prediction · active learning · DFT-ready architecture</span>
         </footer>
       </main>
     </div>
