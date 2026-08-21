@@ -1,0 +1,222 @@
+{
+  "project": "AI-driven Zn-3MP EUV Process Digital Twin",
+  "model": {
+    "type": "GaussianProcessRegressor",
+    "features": [
+      "temperature_C",
+      "pressure_Torr",
+      "underlayer"
+    ],
+    "target": "dev_rate_nm_cycle",
+    "validation": "Leave-One-Out Cross Validation",
+    "metrics": {
+      "linear_mae": 0.8050118986193345,
+      "linear_rmse": 1.031097078255757,
+      "gpr_mae": 0.21773420718191752,
+      "gpr_rmse": 0.31472531432315687
+    }
+  },
+  "scaler": {
+    "mean": [
+      94.16666666666667,
+      1.0833333333333333,
+      0.5833333333333334
+    ],
+    "scale": [
+      11.149240133549709,
+      0.4487637339278754,
+      0.4930066485916347
+    ]
+  },
+  "target_normalization": {
+    "mean": 3.4683333333333333,
+    "std": 2.554723838086788
+  },
+  "kernel": {
+    "constant_value": 3.3748440182411548,
+    "rbf_length_scale": [
+      1.6483304119431497,
+      6.70401363401264,
+      11.610338221054366
+    ],
+    "noise_level": 9.999999999999997e-06
+  },
+  "training_data": [
+    {
+      "temperature_C": 80,
+      "pressure_Torr": 1.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 1.17,
+      "source": "text"
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 1.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 2.5,
+      "source": "text"
+    },
+    {
+      "temperature_C": 100,
+      "pressure_Torr": 1.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 4.0,
+      "source": "figure"
+    },
+    {
+      "temperature_C": 80,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 1.0,
+      "source": "text"
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 2.0,
+      "source": "text"
+    },
+    {
+      "temperature_C": 100,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 3.3,
+      "source": "figure"
+    },
+    {
+      "temperature_C": 110,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 6.6,
+      "source": "figure"
+    },
+    {
+      "temperature_C": 120,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 9.8,
+      "source": "figure"
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 0.5,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 1.25,
+      "source": "text"
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 2.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 5.0,
+      "source": "figure"
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 0.5,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 1.0,
+      "source": "figure"
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 2.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 4.0,
+      "source": "figure"
+    }
+  ],
+  "recommended_experiments": [
+    {
+      "temperature_C": 120.0,
+      "pressure_Torr": 2.0,
+      "underlayer": 1,
+      "pred_rate": 9.966985,
+      "uncertainty": 1.464125,
+      "ucb_score": 11.43111
+    },
+    {
+      "temperature_C": 120.0,
+      "pressure_Torr": 1.975,
+      "underlayer": 1,
+      "pred_rate": 9.972144,
+      "uncertainty": 1.429437,
+      "ucb_score": 11.401581
+    },
+    {
+      "temperature_C": 120.0,
+      "pressure_Torr": 1.95,
+      "underlayer": 1,
+      "pred_rate": 9.976827,
+      "uncertainty": 1.394608,
+      "ucb_score": 11.371435
+    },
+    {
+      "temperature_C": 119.5,
+      "pressure_Torr": 2.0,
+      "underlayer": 1,
+      "pred_rate": 9.897848,
+      "uncertainty": 1.459131,
+      "ucb_score": 11.356979
+    },
+    {
+      "temperature_C": 120.0,
+      "pressure_Torr": 1.925,
+      "underlayer": 1,
+      "pred_rate": 9.981034,
+      "uncertainty": 1.359642,
+      "ucb_score": 11.340675
+    },
+    {
+      "temperature_C": 119.5,
+      "pressure_Torr": 1.975,
+      "underlayer": 1,
+      "pred_rate": 9.902252,
+      "uncertainty": 1.424564,
+      "ucb_score": 11.326816
+    },
+    {
+      "temperature_C": 120.0,
+      "pressure_Torr": 1.9,
+      "underlayer": 1,
+      "pred_rate": 9.984762,
+      "uncertainty": 1.32454,
+      "ucb_score": 11.309302
+    },
+    {
+      "temperature_C": 119.5,
+      "pressure_Torr": 1.95,
+      "underlayer": 1,
+      "pred_rate": 9.90618,
+      "uncertainty": 1.389857,
+      "ucb_score": 11.296038
+    },
+    {
+      "temperature_C": 120.0,
+      "pressure_Torr": 1.875,
+      "underlayer": 1,
+      "pred_rate": 9.988012,
+      "uncertainty": 1.289307,
+      "ucb_score": 11.277319
+    },
+    {
+      "temperature_C": 119.0,
+      "pressure_Torr": 2.0,
+      "underlayer": 1,
+      "pred_rate": 9.820918,
+      "uncertainty": 1.453832,
+      "ucb_score": 11.27475
+    }
+  ],
+  "dft_module": {
+    "status": "awaiting_real_DFT_results",
+    "planned_features": [
+      "adsorption_energy_eV",
+      "reaction_energy_mean_eV",
+      "reaction_energy_std_eV",
+      "activation_barrier_eV"
+    ],
+    "note": "Do not populate with invented DFT values."
+  }
+}
