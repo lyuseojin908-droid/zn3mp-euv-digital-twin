@@ -1,0 +1,225 @@
+{
+  "project": "Zn-3MP DFT-informed physics-aware GPR — fast stable scan",
+  "loocv": {
+    "process_only": {
+      "mae": 0.19395315251720321,
+      "rmse": 0.29286197897299626
+    },
+    "dft_informed": {
+      "mae": 0.1940574928087149,
+      "rmse": 0.2927896874738381,
+      "mae_reduction_percent": -0.05379664633315484
+    }
+  },
+  "real_dft_inputs": {
+    "R1": {
+      "reaction_energy_mean_eV": -0.80890867,
+      "reaction_energy_std_eV": 0.05007895
+    },
+    "R2": {
+      "reaction_energy_mean_eV": -1.55620919,
+      "reaction_energy_std_eV": 0.11149035
+    },
+    "functionals": [
+      "PBE",
+      "B3LYP",
+      "PBE0",
+      "M06-2X",
+      "CAM-B3LYP"
+    ]
+  },
+  "physics_feature": {
+    "thermo_drive_definition": "-(dE_R1+dE_R2)/(2*kB*T)",
+    "note": "temperature-dependent transform using real DFT ensemble reaction energies"
+  },
+  "rigid_scan_scope": {
+    "method": "PBE/def2-svp single-point rigid reaction-coordinate scan",
+    "warning": "Not a relaxed TS barrier and not an activation energy."
+  },
+  "barrier_proxy": {
+    "R1": {
+      "energy_rise_proxy_eV": 8.532975787600519,
+      "max_energy_distance_A": 2.1,
+      "n_valid_points": 5
+    },
+    "R2": {
+      "energy_rise_proxy_eV": 25.60707761234386,
+      "max_energy_distance_A": 2.3,
+      "n_valid_points": 5
+    }
+  },
+  "scan_results": {
+    "R1": [
+      {
+        "scan": "R1_O-Zn_rigid",
+        "distance_A": 3.4,
+        "energy_hartree": -2051.847510429633,
+        "converged": true,
+        "relative_energy_eV": 0.0
+      },
+      {
+        "scan": "R1_O-Zn_rigid",
+        "distance_A": 3.0,
+        "energy_hartree": -2051.780081046573,
+        "converged": true,
+        "relative_energy_eV": 1.8348469867809718
+      },
+      {
+        "scan": "R1_O-Zn_rigid",
+        "distance_A": 2.7,
+        "energy_hartree": -2051.7106434477682,
+        "converged": true,
+        "relative_energy_eV": 3.724340307846833
+      },
+      {
+        "scan": "R1_O-Zn_rigid",
+        "distance_A": 2.4,
+        "energy_hartree": -2051.625371290048,
+        "converged": true,
+        "relative_energy_eV": 6.044713927602257
+      },
+      {
+        "scan": "R1_O-Zn_rigid",
+        "distance_A": 2.1,
+        "energy_hartree": -2051.5339293532975,
+        "converged": true,
+        "relative_energy_eV": 8.532975787600519
+      }
+    ],
+    "R2": [
+      {
+        "scan": "R2_S-Zn_rigid",
+        "distance_A": 3.6,
+        "energy_hartree": -2561.0327242579033,
+        "converged": true,
+        "relative_energy_eV": 0.0
+      },
+      {
+        "scan": "R2_S-Zn_rigid",
+        "distance_A": 3.2,
+        "energy_hartree": -2561.512192428924,
+        "converged": true,
+        "relative_energy_eV": -13.04699359430785
+      },
+      {
+        "scan": "R2_S-Zn_rigid",
+        "distance_A": 2.9,
+        "energy_hartree": -2560.7109694151236,
+        "converged": true,
+        "relative_energy_eV": 8.755395303395092
+      },
+      {
+        "scan": "R2_S-Zn_rigid",
+        "distance_A": 2.6,
+        "energy_hartree": -2560.1153305603507,
+        "converged": true,
+        "relative_energy_eV": 24.963554243738827
+      },
+      {
+        "scan": "R2_S-Zn_rigid",
+        "distance_A": 2.3,
+        "energy_hartree": -2560.0916815127503,
+        "converged": true,
+        "relative_energy_eV": 25.60707761234386
+      }
+    ]
+  },
+  "training_data_with_physics_features": [
+    {
+      "temperature_C": 80,
+      "pressure_Torr": 1.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 1.17,
+      "thermo_drive": 38.85891698489897,
+      "dft_uncertainty_scaled": 4.016188784022094
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 1.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 2.5,
+      "thermo_drive": 37.78886557405223,
+      "dft_uncertainty_scaled": 3.9055956741770683
+    },
+    {
+      "temperature_C": 100,
+      "pressure_Torr": 1.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 4.0,
+      "thermo_drive": 36.776166510028325,
+      "dft_uncertainty_scaled": 3.8009301060629843
+    },
+    {
+      "temperature_C": 80,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 1.0,
+      "thermo_drive": 38.85891698489897,
+      "dft_uncertainty_scaled": 4.016188784022094
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 2.0,
+      "thermo_drive": 37.78886557405223,
+      "dft_uncertainty_scaled": 3.9055956741770683
+    },
+    {
+      "temperature_C": 100,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 3.3,
+      "thermo_drive": 36.776166510028325,
+      "dft_uncertainty_scaled": 3.8009301060629843
+    },
+    {
+      "temperature_C": 110,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 6.6,
+      "thermo_drive": 35.81632920061874,
+      "dft_uncertainty_scaled": 3.7017279631408133
+    },
+    {
+      "temperature_C": 120,
+      "pressure_Torr": 1.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 9.8,
+      "thermo_drive": 34.90531993696317,
+      "dft_uncertainty_scaled": 3.6075723491730955
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 0.5,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 1.25,
+      "thermo_drive": 37.78886557405223,
+      "dft_uncertainty_scaled": 3.9055956741770683
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 2.0,
+      "underlayer": 0,
+      "dev_rate_nm_cycle": 5.0,
+      "thermo_drive": 37.78886557405223,
+      "dft_uncertainty_scaled": 3.9055956741770683
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 0.5,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 1.0,
+      "thermo_drive": 37.78886557405223,
+      "dft_uncertainty_scaled": 3.9055956741770683
+    },
+    {
+      "temperature_C": 90,
+      "pressure_Torr": 2.0,
+      "underlayer": 1,
+      "dev_rate_nm_cycle": 4.0,
+      "thermo_drive": 37.78886557405223,
+      "dft_uncertainty_scaled": 3.9055956741770683
+    }
+  ]
+}
