@@ -15,6 +15,7 @@ import {
   Orbit,
   Radar,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Target,
   Thermometer,
@@ -366,8 +367,10 @@ function ExperimentPlanner({ model, predictor, u }) {
 export default function App() {
   const [model, setModel] = useState(null)
   const [dft, setDft] = useState(null)
+  const [physics, setPhysics] = useState(null)
   const [loadError, setLoadError] = useState('')
   const [dftError, setDftError] = useState('')
+  const [physicsError, setPhysicsError] = useState('')
   const [temperature, setTemperature] = useState(95)
   const [pressure, setPressure] = useState(0.95)
   const [underlayer, setUnderlayer] = useState(1)
@@ -389,6 +392,14 @@ export default function App() {
       })
       .then(setDft)
       .catch(error => setDftError(error.message))
+
+    fetch('/physics_informed_ai_results_fast.json')
+      .then(response => {
+        if (!response.ok) throw new Error('physics_informed_ai_results_fast.json load failed')
+        return response.json()
+      })
+      .then(setPhysics)
+      .catch(error => setPhysicsError(error.message))
   }, [])
 
   const predictor = useMemo(() => model ? buildPredictor(model) : null, [model])
@@ -416,6 +427,12 @@ export default function App() {
   const r2 = dft?.reaction_summary?.find(r => r.reaction_id === 'R2')
   const dez = dft?.precursor_descriptor_summary?.find(r => r.species === 'DEZ')
   const mp3 = dft?.precursor_descriptor_summary?.find(r => r.species === '3MP')
+
+  const physicsReady = Boolean(physics?.loocv?.process_only && physics?.loocv?.dft_informed)
+  const processOnlyMae = physics?.loocv?.process_only?.mae
+  const dftInformedMae = physics?.loocv?.dft_informed?.mae
+  const dftMaeReduction = physics?.loocv?.dft_informed?.mae_reduction_percent
+  const dftImproved = physicsReady && dftMaeReduction > 0
 
   return (
     <div className="app">
@@ -476,7 +493,8 @@ export default function App() {
             <h1>AI-Driven ALD/MLD<br/><em>Process Digital Twin</em></h1>
             <p>
               Gaussian Process Regression predicts dry-development behavior, quantifies posterior uncertainty,
-              and ranks follow-up experiments. Real DFT ensemble descriptors are loaded as a physics-informed AI layer.
+              and ranks follow-up experiments. Real DFT descriptors are evaluated as a physics-informed layer,
+              with failed or non-improving features retained transparently.
             </p>
           </div>
 
@@ -512,6 +530,7 @@ export default function App() {
           <button className={view === 'uncertainty' ? 'active' : ''} onClick={() => setView('uncertainty')}><Radar size={16} /> Uncertainty Field</button>
           <button className={view === 'planner' ? 'active' : ''} onClick={() => setView('planner')}><Target size={16} /> Active Learning</button>
           <button className={view === 'dft' ? 'active' : ''} onClick={() => setView('dft')}><Atom size={16} /> DFT → AI</button>
+          <button className={view === 'inputs' ? 'active' : ''} onClick={() => setView('inputs')}><SlidersHorizontal size={16} /> Full Inputs</button>
           <button className={view === 'data' ? 'active' : ''} onClick={() => setView('data')}><Database size={16} /> Model Data</button>
         </nav>
 
@@ -643,15 +662,126 @@ export default function App() {
                   </div>
 
                   <div className="insight-card" style={{marginTop:'14px'}}>
-                    <div className="panel-eyebrow">NEXT AI EXPERIMENT</div>
-                    <h3>Process-only GPR → Physics-informed GPR</h3>
+                    <div className="panel-eyebrow">PHYSICS-INFORMED AI VALIDATION</div>
+                    <h3>Process-only vs DFT-informed GPR</h3>
+
+                    {!physicsReady ? (
+                      <p>{physicsError || 'Waiting for physics_informed_ai_results_fast.json'}</p>
+                    ) : (
+                      <>
+                        <div className="validation-strip" style={{marginTop:'12px'}}>
+                          <div><span>PROCESS-ONLY MAE</span><b>{processOnlyMae.toFixed(4)}</b></div>
+                          <div><span>DFT-INFORMED MAE</span><b>{dftInformedMae.toFixed(4)}</b></div>
+                          <div>
+                            <span>MAE CHANGE</span>
+                            <b>{dftMaeReduction > 0 ? '−' : '+'}{Math.abs(dftMaeReduction).toFixed(3)}%</b>
+                          </div>
+                          <div>
+                            <span>VALIDATION RESULT</span>
+                            <b>{dftImproved ? 'IMPROVED' : 'NO MEANINGFUL GAIN'}</b>
+                          </div>
+                        </div>
+
+                        <p style={{marginTop:'12px'}}>
+                          The DFT-informed feature did not materially improve LOOCV on this 12-point,
+                          single-chemistry dataset. That is expected because thermo_drive is derived from
+                          the same chemistry and temperature, so it adds little independent information.
+                          The result is retained rather than hidden.
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="insight-card" style={{marginTop:'14px'}}>
+                    <div className="panel-eyebrow">RIGID SCAN DIAGNOSTIC</div>
+                    <h3>Do not interpret the rigid-scan energy rise as an activation barrier</h3>
                     <p>
-                      The present 12 process points use the same Zn–3MP chemistry, so static DFT values cannot simply be copied into every row.
-                      The next meaningful feature is a kinetics-aware descriptor derived from the activation barrier and temperature, followed by the same LOOCV comparison.
+                      The fast scan intentionally froze fragment geometries and only changed Zn–O / Zn–S separation.
+                      The resulting large energy rises are geometry/orientation artifacts for this purpose,
+                      so they are kept only as a diagnostic and are not used as a kinetic AI feature.
                     </p>
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {view === 'inputs' && (
+            <div className="data-panel">
+              <div className="data-head">
+                <div>
+                  <div className="panel-eyebrow">FULL PROCESS DIGITAL TWIN V2</div>
+                  <h3>Expanded Process Variable Architecture</h3>
+                </div>
+                <div className="dataset-chip">3 ACTIVE · 11 DATA NEEDED</div>
+              </div>
+
+              <div className="insight-card" style={{marginTop:'14px'}}>
+                <div className="panel-eyebrow">MODEL POLICY</div>
+                <h3>Show every relevant process variable — train only on variables with real variation</h3>
+                <p>
+                  Variables that are constant or unavailable are displayed as DATA NEEDED and are not silently
+                  inserted into the GPR. This prevents fake dimensionality and keeps the current model scientifically traceable.
+                </p>
+              </div>
+
+              <div className="table-wrap" style={{marginTop:'14px'}}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Stage</th>
+                      <th>Variable</th>
+                      <th>Current status</th>
+                      <th>AI use</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      ['MLD / Dry develop','Temperature','ACTIVE','GPR input'],
+                      ['Dry develop','hfacH pressure','ACTIVE','GPR input'],
+                      ['Interface','Al₂O₃ underlayer','ACTIVE','GPR input'],
+                      ['MLD','DEZ pulse time','DATA NEEDED','activate after varied data'],
+                      ['MLD','DEZ purge time','DATA NEEDED','activate after varied data'],
+                      ['MLD','3MP pulse time','DATA NEEDED','activate after varied data'],
+                      ['MLD','3MP purge time','DATA NEEDED','activate after varied data'],
+                      ['MLD','Carrier-gas flow','DATA NEEDED','activate after varied data'],
+                      ['MLD','Cycle count','DATA NEEDED','activate after varied data'],
+                      ['Film state','Zn–3MP thickness','DATA NEEDED','stage-to-stage state'],
+                      ['Interface','Al₂O₃ thickness','DATA NEEDED','continuous interface feature'],
+                      ['EUV','EUV dose','DATA NEEDED','exposure-stage input'],
+                      ['Dry develop','Development time','DATA NEEDED','kinetic/process input'],
+                      ['DFT physics','Reaction energy / spread','READY','physics descriptor layer'],
+                    ].map(([stage, variable, status, use]) => (
+                      <tr key={stage + variable}>
+                        <td>{stage}</td>
+                        <td>{variable}</td>
+                        <td><span className="source-chip text">{status}</span></td>
+                        <td>{use}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="workspace-grid" style={{marginTop:'14px'}}>
+                <div className="insight-card">
+                  <div className="panel-eyebrow">STAGE 1</div>
+                  <h3>MLD Growth Twin</h3>
+                  <p>Pulse / purge / flow / cycle variables should predict growth-per-cycle and film thickness once varied experimental data are available.</p>
+                </div>
+                <div className="insight-stack">
+                  <div className="insight-card">
+                    <div className="panel-eyebrow">STAGE 2</div>
+                    <h3>EUV Exposure Twin</h3>
+                    <p>Film state + EUV dose + interface state.</p>
+                  </div>
+                  <div className="insight-card">
+                    <div className="panel-eyebrow">STAGE 3</div>
+                    <h3>Dry Development Twin</h3>
+                    <p>hfacH pressure + development time + upstream film state.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -688,7 +818,7 @@ export default function App() {
 
         <footer>
           <span>AI-Driven Zn–3MP Process Digital Twin</span>
-          <span>Colab-trained GPR · uncertainty-aware prediction · active learning · real DFT descriptor layer</span>
+          <span>Colab-trained GPR · uncertainty-aware prediction · active learning · validated DFT feature layer</span>
         </footer>
       </main>
     </div>
